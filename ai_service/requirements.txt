@@ -1,4 +1,6 @@
-google-generativeai 
-gradio 
-pillow 
+google-genai
+fastapi
+uvicorn[standard]
+pillow
 python-dotenv
+gradio

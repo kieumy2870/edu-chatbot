@@ -1,4 +1,30 @@
+# Environment variables (CRITICAL - API Keys!)
 .env
-.gradio
-__pycache__
+.env.local
+
+# Gradio files
+.gradio/
+*.gradio
 .pem.gradio
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+
+# SQLite databases (cache)
+*.db
+*.sqlite
+math_cache.db
+
+# Virtual environments
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs and temp files
+*.log
+*.tmp

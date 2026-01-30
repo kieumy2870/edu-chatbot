@@ -1,49 +1,69 @@
-import google.generativeai as genai
+"""AI Math Problem Solving Service.
+
+This module provides the core functionality for solving math problems using
+Google's Gemini AI with caching support.
+"""
+import io
+from typing import Optional
+
+from google import genai
 from PIL import Image
-from config import GEMINI_API_KEY, MODEL_NAME, SYSTEM_INSTRUCTION
 
-try:
-    genai.configure(api_key=GEMINI_API_KEY)
-except (ValueError, AttributeError) as e:
-    print(e)
-    exit()
+from config import GEMINI_API_KEY, MODEL_NAME
+from prompt import SYSTEM_INSTRUCTION
+import db
 
-model = genai.GenerativeModel(model_name=MODEL_NAME)
+# Khởi tạo database
+db.init_db()
 
-def initialize_chat():
-    print("Khởi tạo phiên chat mới...")
-    chat = model.start_chat(history=[
-        {
-            "role": "user",
-            "parts": [SYSTEM_INSTRUCTION]
-        },
-        {
-            "role": "model",
-            "parts": ["Vâng, tôi đã hiểu. Tôi là một gia sư toán học và sẵn sàng giúp bạn giải các bài toán theo đúng định dạng yêu cầu. Hãy đưa bài toán cho tôi."]
-        }
-    ])
-    return chat
+# Cấu hình Client mới của Google
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-def solve_math_problem(text_problem, image_problem, chat_session):
-    if not text_problem and image_problem is None:
-        return "Vui lòng nhập bài toán bằng văn bản hoặc tải lên hình ảnh.", chat_session
+
+def solve_math_problem(
+    text_problem: Optional[str], image_bytes: Optional[bytes] = None
+) -> str:
+    """Solve a math problem using Gemini AI with caching.
+
+    Args:
+        text_problem: Text description of the math problem.
+        image_bytes: Optional image bytes containing the problem.
+
+    Returns:
+        str: The solution to the math problem, or error message.
+    """
+    # 1. Tạo hash để kiểm tra cache
+    req_hash = db.generate_hash(text_problem, image_bytes)
+
+    # 2. Kiểm tra trong Database xem đã giải bài này chưa
+    cached = db.get_cached_response(req_hash)
+    if cached:
+        return f"[KẾT QUẢ TỪ CACHE]\n{cached}"
 
     try:
-        user_content = []
-        prompt = text_problem if text_problem else "Hãy giải bài toán trong hình ảnh này."
-        user_content.append(prompt)
-        
-        if image_problem is not None:
-            pil_image = Image.fromarray(image_problem)
-            user_content.append(pil_image)
+        # 3. Chuẩn bị nội dung gửi đi
+        contents = []
+        if text_problem:
+            contents.append(text_problem)
 
-        print("Đang gửi yêu cầu đến Gemini...")
-        response = chat_session.send_message(user_content)
-        print("Đã nhận được phản hồi từ Gemini.")
-        
-        return response.text, chat_session
+        if image_bytes:
+            img = Image.open(io.BytesIO(image_bytes))
+            contents.append(img)
+
+        # 4. Gọi API Gemini
+        # Lưu ý: SDK mới dùng model='gemini-2.0-flash' hoặc 'gemini-1.5-pro'
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=contents,
+            config={"system_instruction": SYSTEM_INSTRUCTION},
+        )
+
+        solution = response.text
+
+        # 5. Lưu vào cache để lần sau không tốn phí API
+        db.save_to_cache(req_hash, text_problem, solution)
+
+        return solution
 
     except Exception as e:
-        print(f"Đã xảy ra lỗi trong quá trình gọi API: {e}")
-        error_message = f"Xin lỗi, đã có lỗi xảy ra trong quá trình xử lý. Chi tiết: {e}"
-        return error_message, chat_session
+        return f"Lỗi xử lý: {str(e)}"
